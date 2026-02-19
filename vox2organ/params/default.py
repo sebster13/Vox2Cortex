@@ -80,13 +80,13 @@ hyper_ps_default = {
     'EXP_PREFIX': 'exp_',
 
     # Username for wandb
-    'WANDB_USER': 'fabibo3',
+    'WANDB_USER': 'wolffsebastian',
 
     # Project name used for wandb
-    'PROJ_NAME': 'vox2organ',
+    'PROJ_NAME': 'Fetal_CSR',
 
     # Entity of wandb, e.g. group name
-    'ENTITY': 'team-segmentation',
+    'ENTITY': 'wolffsebastian3',
 
     # The loglevel for output logs
     'LOGLEVEL': 'INFO',

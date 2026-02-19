@@ -18,6 +18,7 @@ _run_docker = os.path.isdir("/mnt/code")
 
 class SupportedDatasets(IntEnum):
     """ List supported datasets """
+    FETAL_CONTROL_JT = 3
     ADNI_CSR_large = 4
     AbdomenCT_1K = 22
     AbdomenMRI = 23
@@ -33,6 +34,7 @@ class AbdomenMRIDatasets(IntEnum):
 class CortexDatasets(IntEnum):
     """ List cortex datasets """
     ADNI_CSR_large = SupportedDatasets.ADNI_CSR_large.value
+    FETAL_CONTROL_JT = SupportedDatasets.FETAL_CONTROL_JT.value
 
 
 dataset_paths = {
@@ -59,5 +61,13 @@ dataset_paths = {
         'FIXED_SPLIT': ["ADNI_large_train_qc_pass.txt",
                         "ADNI_large_val_qc_pass.txt",
                         "ADNI_large_test_qc_pass.txt"], # Read from files
+    },
+    SupportedDatasets.FETAL_CONTROL_JT.name: {
+        'RAW_DATA_DIR': '/host_workspace/2024_FETAL_CONTROL_JT/' if (
+            _run_docker
+        ) else "/host_workspace/2024_FETAL_CONTROL_JT",
+        'FIXED_SPLIT': ["train.txt",
+                        "val.txt",
+                        "test.txt"], 
     },
 }

@@ -647,15 +647,24 @@ class ImageAndMeshDataset(DatasetHandler, ABC):
             self.trans_affine.append(world2vox_affine)
             file_vertices = []
             file_faces = []
+            print("Meshnames", meshnames)
+            fn = os.path.join(fn, "surface", fn[-12:])
             for mn in meshnames:
+                print("Raw_data_dir", self._raw_data_dir)
+                print("fn", fn)
+                print("mn", mn)
                 try:
+                    # mesh = trimesh.load_mesh(
+                    #     os.path.join(self._raw_data_dir, fn, mn + ".stl")
+                    # )
                     mesh = trimesh.load_mesh(
-                        os.path.join(self._raw_data_dir, fn, mn + ".stl")
+                        os.path.join(self._raw_data_dir, fn + "." + mn + ".vtk")
                     )
                 except ValueError:
                     try:
                         mesh = trimesh.load_mesh(
-                            os.path.join(self._raw_data_dir, fn, mn + ".ply"),
+                            # os.path.join(self._raw_data_dir, fn, mn + ".ply"),
+                            os.path.join(self._raw_data_dir, fn + "." + mn + ".vtk"),
                             process=False,
                         )
                     except Exception as e:

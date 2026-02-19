@@ -25,6 +25,7 @@ from utils.mesh import Mesh
 
 log = logger.get_std_logger(__name__)
 
+# TODO: change the labels according to our data
 class CortexLabels(IntEnum):
     """ Mapping IDs in segmentation masks to names.
     """
@@ -52,8 +53,10 @@ class CortexDataset(ImageAndMeshDataset):
     """
 
     # image_file_name = "mri_mni152.nii.gz"
-    image_file_name = "mri.nii.gz"
-    seg_file_name = "aseg.nii.gz" # For FS segmentations
+    # image_file_name = "mri.nii.gz" 
+    # seg_file_name = "aseg.nii.gz" # For FS segmentations
+    image_file_name = "nesvor_svr/svr_1.0mm.nii.gz"
+    seg_file_name = "bounti_seg/svr_1.0mm-mask-brain_bounti-19.nii.gz"
 
     LabelMap = CortexLabels
 
@@ -102,11 +105,17 @@ class CortexDataset(ImageAndMeshDataset):
                 "white_matter": ("left_white_matter", "right_white_matter"),
                 "gray_matter": ("left_cerebral_cortex", "right_cerebral_cortex"),
             }
+            #mesh_label_names = {
+            #    "lh_white": "lh_white",
+            #    "rh_white": "rh_white",
+            #    "lh_pial": "lh_pial",
+            #    "rh_pial": "rh_pial"
+            #}
             mesh_label_names = {
-                "lh_white": "lh_white",
-                "rh_white": "rh_white",
-                "lh_pial": "lh_pial",
-                "rh_pial": "rh_pial"
+                "lh_white" : "L.white",
+                "rh_white" : "R.white",
+                "lh_pial" : "L.pial",
+                "rh_pial" : "R.pial"
             }
         else:
             raise ValueError("Unknown structure type.")
@@ -120,9 +129,12 @@ class CortexDataset(ImageAndMeshDataset):
             for k, v in mesh_label_names.items():
                 mesh_label_names[k] = v + "_resampled_ico6"
         elif not self.reduced_gt and self.registered_gt_meshes:
-            log.info('Using resampled ico7 labels.')
+            #log.info('Using resampled ico7 labels.')
+            #for k, v in mesh_label_names.items():
+            #    mesh_label_names[k] = v + "_resampled_ico7"
+            log.info('Using native surf files')
             for k, v in mesh_label_names.items():
-                mesh_label_names[k] = v + "_resampled_ico7"
+                mesh_label_names[k] = v + ".native.surf"
         else:
             log.info('Using standard FS labels.')
             pass
