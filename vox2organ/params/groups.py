@@ -102,8 +102,8 @@ hyper_ps_groups = {
             [0.003] * 2 + [0.007] * 2  # NC for white, pial
         ],
         'REGISTERED_GT_MESHES': True, # Only affects training meshes!
-        'REDUCED_GT': False,
-        'MESH_TEMPLATE_ID': "fsaverage-smooth-no-parc",
+        'REDUCED_GT': True,
+        'MESH_TEMPLATE_ID': "fsaverage6-smooth-no-parc",
     },
 
 

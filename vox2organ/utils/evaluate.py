@@ -286,7 +286,11 @@ class ModelEvaluator:
         filename = self._dataset.get_ID_from_index(index)
         subdir = os.path.join(self._save_dir, filename)
         if not os.path.isdir(subdir):
-            os.mkdir(subdir)
+            try:
+                os.mkdir(subdir)
+            except FileNotFoundError:
+                os.mkdir(os.path.dirname(subdir))
+                os.mkdir(subdir)
         if remove_previous_meshes:
             previous_meshes = glob.glob(os.path.join(subdir, "*_epoch_*.ply"))
             previous_segs = glob.glob(os.path.join(subdir, "*_epoch_*.nii.gz"))

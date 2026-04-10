@@ -281,6 +281,7 @@ class Solver():
          curvs,
          parcs) = data
 
+
         input_meshes = self.template.create_template_batch_size(
             x_img.shape[0], self.rank
         )
@@ -472,6 +473,8 @@ class Solver():
                             wandb.log({f"lr_{i}": lr}, step=iteration)
 
                 # Training step
+                # for elem in data:
+                #    print(elem.shape if isinstance(elem, torch.Tensor) else type(elem))
                 self.training_step(model, data, iteration)
 
                 # Launch scheduler step

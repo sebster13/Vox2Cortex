@@ -125,19 +125,20 @@ class CortexDataset(ImageAndMeshDataset):
             for k, v in mesh_label_names.items():
                 mesh_label_names[k] = v + "_reduced_0.3"
         elif self.reduced_gt and self.registered_gt_meshes:
-            log.info('Using resampled ico6 labels.')
-            for k, v in mesh_label_names.items():
-                mesh_label_names[k] = v + "_resampled_ico6"
-        elif not self.reduced_gt and self.registered_gt_meshes:
-            #log.info('Using resampled ico7 labels.')
+            #log.info('Using resampled ico6 labels.')
             #for k, v in mesh_label_names.items():
-            #    mesh_label_names[k] = v + "_resampled_ico7"
-            log.info('Using native surf files')
+            #    mesh_label_names[k] = v + "_resampled_ico6"
+            log.info('Using resampled fsaverage6 labels.')
             for k, v in mesh_label_names.items():
-                mesh_label_names[k] = v + ".native.surf"
+                mesh_label_names[k] = v + ".fsa6"
+        elif not self.reduced_gt and self.registered_gt_meshes:
+            log.info('Using resampled ico7 labels.')
+            for k, v in mesh_label_names.items():
+                mesh_label_names[k] = v + "_resampled_ico7"
         else:
-            log.info('Using standard FS labels.')
-            pass
+            log.info('Using standard FS labels.') # It seems like we use this for the validation set, which means we also want to adapt it to our data
+            for k, v in mesh_label_names.items(): # remove this line in case we want to use the standard FS labels for the validation set
+                mesh_label_names[k] = v + ".fsa6"
 
         return seg_label_names, mesh_label_names
 

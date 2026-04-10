@@ -13,6 +13,7 @@ from argparse import ArgumentParser, RawTextHelpFormatter
 import warnings
 warnings.filterwarnings("ignore")
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
 import torch
 import numpy as np
 

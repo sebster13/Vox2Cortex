@@ -121,6 +121,22 @@ class SurfaceDistance(EvalMetric):
             results["Tissue"].append(name)
             results["Metric"].append("HD99")
             results["Value"].append(hd99)
+            # Chamfer Distance (unsquared and squared)
+            chamfer_unsq = P2G_dist.mean() + G2P_dist.mean()
+            results["Tissue"].append(name)
+            results["Metric"].append("Chamfer")
+            results["Value"].append(float(chamfer_unsq))
+
+            chamfer_sq = (P2G_dist ** 2).mean() + (G2P_dist ** 2).mean()
+            results["Tissue"].append(name)
+            results["Metric"].append("ChamferSquared")
+            results["Value"].append(float(chamfer_sq))
+
+            # RMSE (symmetric)
+            rmse = np.sqrt(0.5 * ((P2G_dist ** 2).mean() + (G2P_dist ** 2).mean()))
+            results["Tissue"].append(name)
+            results["Metric"].append("RMSE")
+            results["Value"].append(float(rmse))
 
         return results
 
