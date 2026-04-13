@@ -152,7 +152,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   for H in L R; do
     [[ "$H" == "L" ]] && _side="lh" || _side="rh"
     for MAT in pial white; do
-      GT="${SURF_DIR}/${SES}.${H}.${MAT}.native.surf.vtk"
+      GT="${SURF_DIR}/${SES}.${H}.${MAT}.native.surf.ply"
       PRED="${SURF_DIR}/${SES}.${H}.${MAT}.fsa6.ply"
       LABEL="${SUB}_${SES}_${H}_${MAT}"
 
