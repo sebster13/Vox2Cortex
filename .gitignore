@@ -3,6 +3,8 @@ __pycache__/
 experiments/
 misc/
 *.pdf
+*.err
+*.out
 .pylintrc
 .idea
 .vscode/
