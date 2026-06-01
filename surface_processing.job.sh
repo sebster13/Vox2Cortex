@@ -442,7 +442,7 @@ process_session() {
     for eval_hemi in L R; do
       if [[ "$eval_hemi" == "L" ]]; then eval_side="lh"; else eval_side="rh"; fi
       for eval_surf in pial white; do
-        eval_gt="$surf_dir/${ses_id}.${eval_hemi}.${eval_surf}.native.surf.vtk"
+        eval_gt="$surf_dir/${ses_id}.${eval_hemi}.${eval_surf}.native.surf.ply"
         eval_pred="$surf_dir/${ses_id}.${eval_hemi}.${eval_surf}.fsa6.ply"
         eval_label="${sub_id}_${ses_id}_${eval_hemi}_${eval_surf}"
 
