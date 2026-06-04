@@ -1,6 +1,8 @@
 import numpy as np
 import nibabel as nib
 import os
+import sys
+
 
 def pad_image(input_image, output_image, x_size, y_size, z_size):
     '''
@@ -100,3 +102,16 @@ def pad_image(input_image, output_image, x_size, y_size, z_size):
     # Save
     nib.save(out, output_image)
     # return out
+
+if __name__ == "__main__":
+    if len(sys.argv) != 6:
+        print("Usage: python padding.py input_image.nii output_image.nii x_size y_size z_size")
+        sys.exit(1)
+
+    input_image = sys.argv[1]
+    output_image = sys.argv[2]
+    x_size = int(sys.argv[3])
+    y_size = int(sys.argv[4])
+    z_size = int(sys.argv[5])
+
+    pad_image(input_image, output_image, x_size, y_size, z_size)
