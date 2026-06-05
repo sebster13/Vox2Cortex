@@ -251,7 +251,7 @@ process_session() {
   if [[ ! -s "$FLO" ]]; then
     log "Padding SVR: $INNII -> $FLO"
     run_container_python \
-      /home/cir/swolff/surface_reconstruction/padding.py \
+      /home/cir/swolff/surface_reconstruction/Vox2Cortex/padding.py \
       "$INNII" "$FLO" "$PAD_X" "$PAD_Y" "$PAD_Z"
     if [[ ! -s "$FLO" ]]; then
       err "Padding failed, output not found: $FLO"
@@ -277,7 +277,7 @@ process_session() {
   if [[ ! -s "$FLO_SEG" ]]; then
     log "Padding segmentation: $SEG_INNII -> $FLO_SEG"
     run_container_python \
-      /home/cir/swolff/surface_reconstruction/padding.py \
+      /home/cir/swolff/surface_reconstruction/Vox2Cortex/padding.py \
       "$SEG_INNII" "$FLO_SEG" "$PAD_X" "$PAD_Y" "$PAD_Z"
     if [[ ! -s "$FLO_SEG" ]]; then
       err "Padding segmentation failed, output not found: $FLO_SEG"
@@ -371,21 +371,35 @@ if [[ ! -d "$DATASET_DIR" ]]; then
   exit 1
 fi
 
-CACHE_OK="$DATASET_DIR/reg_processed.txt"
-CACHE_FAIL="$DATASET_DIR/reg_processed_failed.txt"
+PREV_PROCESSED="$DATASET_DIR/processed.txt"
+CACHE_OK="$DATASET_DIR/processed_reg.txt"
+CACHE_FAIL="$DATASET_DIR/processed_reg_failed.txt"
 touch "$CACHE_OK" "$CACHE_FAIL"
+
+if [[ ! -s "$PREV_PROCESSED" ]]; then
+  echo "ERROR: No previous processed.txt found or it is empty: $PREV_PROCESSED" >&2
+  exit 1
+fi
 
 log "DATASET_DIR=$DATASET_DIR"
 log "ATLAS_DIR=$ATLAS_DIR"
 log "GA_CSV=$GA_CSV"
 log "CONTAINER_IMG=$CONTAINER_IMG"
 log "Runtime=$RUN_CTN  N_JOBS=$N_JOBS"
-log "Starting session discovery..."
+log "Reading sessions from $PREV_PROCESSED..."
 
-# Discover sessions
-mapfile -t SESSIONS < <(find "$DATASET_DIR" -maxdepth 2 -mindepth 2 -type d -name "ses-*" | sort)
+# Build session list from processed.txt entries (sub-XXX/ses-XXXXXXXX per line)
+mapfile -t SESSIONS < <(while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  ses_path="${DATASET_DIR}/${line}"
+  if [[ -d "$ses_path" ]]; then
+    echo "$ses_path"
+  else
+    echo "[WARNING] Directory not found, skipping: $ses_path" >&2
+  fi
+done < "$PREV_PROCESSED" | sort)
 
-log "Found ${#SESSIONS[@]} sessions"
+log "Found ${#SESSIONS[@]} sessions to process"
 
 # ---------------------------
 # Main loop
