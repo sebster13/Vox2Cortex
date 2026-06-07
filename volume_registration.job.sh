@@ -266,8 +266,8 @@ process_session() {
   # ---------------------------
   # 3b. Padding segmentation
   # ---------------------------
-  local SEG_INNII="${seg_dir}/svr_1mm-mask-brain_bounti-19.nii.gz"
-  local FLO_SEG="${seg_dir}/svr_1mm-mask-brain_bounti-19_padded.nii.gz"
+  local SEG_INNII="${seg_dir}/svr_1.0mm-mask-brain_bounti-19.nii.gz"
+  local FLO_SEG="${seg_dir}/svr_1.0mm-mask-brain_bounti-19_padded.nii.gz"
 
   if [[ ! -s "$SEG_INNII" ]]; then
     err "Missing segmentation input: $SEG_INNII"
@@ -318,7 +318,7 @@ process_session() {
   # 5. Resample segmentation with affine
   # ---------------------------
   local REF_SEG="${atlas_subj_dir}/SEGMENTATIONS/SEG_CRL_1040${ATLAS_AGE}_1mm.nii.gz"
-  local RES_SEG="${seg_dir}/svr_1mm-mask-brain_bounti-19_padded_reg.nii.gz"
+  local RES_SEG="${seg_dir}/svr_1.0mm-mask-brain_bounti-19_padded_reg.nii.gz"
 
   if [[ ! -s "$RES_SEG" ]]; then
     if [[ ! -s "$REF_SEG" ]]; then
