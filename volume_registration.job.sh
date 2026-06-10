@@ -304,7 +304,7 @@ process_session() {
 
   if [[ ! -s "$AFF" ]]; then
     log "Running reg_aladin: $FLO -> $REF"
-    reg_aladin -ref "$REF" -flo "$FLO" -res "$RES" -aff "$AFF" -rigOnly -voff
+    reg_aladin -ref "$REF" -flo "$FLO" -res "$RES" -aff "$AFF" -pad 0 -rigOnly -voff
     if [[ ! -s "$AFF" ]]; then
       err "reg_aladin failed, affine not produced: $AFF"
       append_unique "$sub_id/$ses_id" "$CACHE_FAIL"
