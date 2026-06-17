@@ -527,8 +527,10 @@ class ImageAndMeshDataset(DatasetHandler, ABC):
         transformations = []
         for fn in tqdm(self.ids, position=0, leave=True, desc="Loading images..."):
             img = nib.load(os.path.join(self._raw_data_dir, fn, filename))
+            # print('load_data3D_and_transform', fn, filename, img)
 
             img_data = img.get_fdata()
+            img_data = np.nan_to_num(img_data, nan=0.0) # replace nan values with zero
             if self._orig_img_size is None:
                 self._orig_img_size = img_data.shape
             else:
@@ -650,9 +652,9 @@ class ImageAndMeshDataset(DatasetHandler, ABC):
             print("Meshnames", meshnames)
             fn = os.path.join(fn, "surf", fn[-12:])
             for mn in meshnames:
-                print("Raw_data_dir", self._raw_data_dir)
-                print("fn", fn)
-                print("mn", mn)
+                #print("Raw_data_dir", self._raw_data_dir)
+                #print("fn", fn)
+                #print("mn", mn)
                 try:
                     mesh = trimesh.load_mesh(
                         os.path.join(self._raw_data_dir, fn, mn + ".stl")

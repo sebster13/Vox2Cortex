@@ -157,8 +157,8 @@ class L1MeshLoss(MeshLoss):
 
         #pred_points = sample_points_from_meshes(pred_meshes, n_points)
         pred_points = pred_meshes.verts_padded()
-        print("pred:", pred_points.shape)
-        print("target:", target_.shape)
+        #print("pred:", pred_points.shape)
+        #print("target:", target_.shape)
 
         distance = self.l1loss(pred_points, target_) * point_weights
         return distance.sum(2).mean()

@@ -29,10 +29,10 @@ log = logger.get_std_logger(__name__)
 class CortexLabels(IntEnum):
     """ Mapping IDs in segmentation masks to names.
     """
-    right_white_matter = 41
-    left_white_matter = 2
+    right_white_matter = 6
+    left_white_matter = 5
     left_cerebral_cortex = 3
-    right_cerebral_cortex = 42
+    right_cerebral_cortex = 4
 
 
 class CortexDataset(ImageAndMeshDataset):
@@ -55,8 +55,8 @@ class CortexDataset(ImageAndMeshDataset):
     # image_file_name = "mri_mni152.nii.gz"
     # image_file_name = "mri.nii.gz" 
     # seg_file_name = "aseg.nii.gz" # For FS segmentations
-    image_file_name = "nesvor_svr/svr_1.0mm.nii.gz"
-    seg_file_name = "bounti_seg/svr_1.0mm-mask-brain_bounti-19.nii.gz"
+    image_file_name = "nesvor_svr/svr_1mm_padded_reg.nii.gz"
+    seg_file_name = "bounti_seg/svr_1.0mm-mask-brain_bounti-19_padded_reg.nii.gz"
 
     LabelMap = CortexLabels
 
@@ -128,9 +128,9 @@ class CortexDataset(ImageAndMeshDataset):
             #log.info('Using resampled ico6 labels.')
             #for k, v in mesh_label_names.items():
             #    mesh_label_names[k] = v + "_resampled_ico6"
-            log.info('Using resampled fsaverage6 labels.')
+            log.info('Using resampled and registered fsaverage6 labels.')
             for k, v in mesh_label_names.items():
-                mesh_label_names[k] = v + ".fsa6"
+                mesh_label_names[k] = v + ".fsa6.reg"
         elif not self.reduced_gt and self.registered_gt_meshes:
             log.info('Using resampled ico7 labels.')
             for k, v in mesh_label_names.items():
@@ -138,7 +138,7 @@ class CortexDataset(ImageAndMeshDataset):
         else:
             log.info('Using standard FS labels.') # It seems like we use this for the validation set, which means we also want to adapt it to our data
             for k, v in mesh_label_names.items(): # remove this line in case we want to use the standard FS labels for the validation set
-                mesh_label_names[k] = v + ".fsa6"
+                mesh_label_names[k] = v + ".fsa6.reg"
 
         return seg_label_names, mesh_label_names
 

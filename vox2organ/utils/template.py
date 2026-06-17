@@ -21,7 +21,8 @@ import logger
 from utils.coordinate_transform import transform_mesh_affine
 
 
-TEMPLATE_PATH = "../supplementary_material/"
+# TEMPLATE_PATH = "../supplementary_material/"
+TEMPLATE_PATH = "/host_workspace/2024_FETAL_CONTROL_JT/atlases"
 
 log = logger.get_std_logger(__name__)
 
@@ -29,7 +30,8 @@ log = logger.get_std_logger(__name__)
 # Specification of different templates
 TEMPLATE_SPECS = {
     "fsaverage6-smooth-no-parc": {
-        "path": os.path.join(TEMPLATE_PATH, "brain_template", "fsaverage6"),
+        # "path": os.path.join(TEMPLATE_PATH, "brain_template", "fsaverage6"),
+        "path": os.path.join(TEMPLATE_PATH, "39_fsa6", "surf"),
         "mesh_suffix": "_smoothed.ply",
         "parc_labels": False,
         "group_structs": [["lh_white", "rh_white"], ["lh_pial", "rh_pial"]],

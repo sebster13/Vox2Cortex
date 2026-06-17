@@ -10,10 +10,11 @@ import numpy as np
 import torch
 
 class CortexLabels(IntEnum):
-    right_white_matter = 41
-    left_white_matter = 2
+    # TODO: Adapt to our data
+    right_white_matter = 6 # 41
+    left_white_matter = 5 # 2
     left_cerebral_cortex = 3
-    right_cerebral_cortex = 42
+    right_cerebral_cortex = 4 # 42
 
 def combine_labels(labels, names, value=1):
     """ Only consider labels in 'names' and set all those labels equally to
