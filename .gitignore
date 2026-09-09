@@ -7,6 +7,7 @@ misc/
 *.out
 .pylintrc
 .idea
+.wandb
 .vscode/
 .mypy_cache/
 vox2organ.egg-info/
@@ -16,3 +17,5 @@ evaluation/
 group_analysis/
 postprocessing/
 .ipynb_checkpoints/
+supplementary_material/brain_template/
+scores.csv

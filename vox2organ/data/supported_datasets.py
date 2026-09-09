@@ -66,8 +66,8 @@ dataset_paths = {
         'RAW_DATA_DIR': '/host_workspace/2024_FETAL_CONTROL_JT/' if (
             _run_docker
         ) else "/host_workspace/2024_FETAL_CONTROL_JT",
-        'FIXED_SPLIT': ["train.txt",
-                        "val.txt",
-                        "test.txt"], 
+        'FIXED_SPLIT': ["train_reg_random.txt",
+                        "val_reg_random.txt",
+                        "test_reg_random.txt"], 
     },
 }
