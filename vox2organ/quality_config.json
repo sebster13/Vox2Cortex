@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "_instructions": {
+    "general_quality": "Replace all null max values in general_quality.metric_bins with study-specific thresholds. The thresholds must increase from Bin 1 to Bin 3.",
+    "reference_statistics": "Replace null mean, std, and weight values for every enabled composite metric after calculating the reference distribution.",
+    "overrides": "Optional per-surface settings can be placed in overrides using keys such as L.pial, R.pial, L.white, or R.white."
+  },
+
+  "evaluation": {
+    "compute_specific_metrics_even_if_screening_fails": true
+  },
+
+  "general_quality": {
+    "calculate_self_intersections": true,
+    "fallback_bin": 4,
+    "missing_metric_policy": "unscorable",
+
+    "euler": {
+      "target": 2,
+      "tolerance": 0,
+      "mismatch_bin": 4
+    },
+
+    "required_metrics": [
+      "SelfIntersectingFacesPct",
+      "NormalConsistencyMeanDeg",
+      "OrientationInconsistentFacesPct"
+    ],
+
+    "metric_bins": {
+      "SelfIntersectingFacesPct": [
+        {
+          "bin": 1,
+          "max": 0.01 
+        },
+        {
+          "bin": 2,
+          "max": 0.1
+        },
+        {
+          "bin": 3,
+          "max": 0.2
+        }
+      ],
+
+      "NormalConsistencyMeanDeg": [
+        {
+          "bin": 1,
+          "max": 0.01 
+        },
+        {
+          "bin": 2,
+          "max": 0.1
+        },
+        {
+          "bin": 3,
+          "max": 0.2
+        }
+      ],
+
+      "OrientationInconsistentFacesPct": [
+        {
+          "bin": 1,
+          "max": 0.01
+        },
+        {
+          "bin": 2,
+          "max": 0.1
+        },
+        {
+          "bin": 3,
+          "max": 0.2
+        }
+      ]
+    },
+
+    "gt_eligible_bins": [
+      1,
+      2
+    ],
+
+    "prediction_hard_failure_bins": [
+      4
+    ]
+  },
+
+  "surface_distance": {
+    "n_points": 10000,
+    "seed": 42,
+    "device": "cuda"
+  },
+
+  "rmsd": {
+    "enabled": true,
+    "require_identical_faces": false
+  },
+
+  "overlap": {
+    "mode": "disabled",
+    "require_reference_image": false,
+    "affine_tolerance": 1e-05,
+    "_available_modes": [
+      "disabled",
+      "segmentation_files",
+      "surface_voxelization"
+    ],
+    "_note": "surface_voxelization is currently a reserved placeholder. Use segmentation_files when prediction and GT masks are available in the same image grid."
+  },
+
+  "composite_score": {
+    "z_score_mode": "signed",
+    "require_weights_sum_to_one": true,
+    "weight_sum_tolerance": 1e-06,
+
+    "metrics": {
+      "ASSD": {
+        "enabled": true,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "lower"
+      },
+
+      "HD": {
+        "enabled": false,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "lower"
+      },
+
+      "HD90": {
+        "enabled": false,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "lower"
+      },
+
+      "HD95": {
+        "enabled": true,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "lower"
+      },
+
+      "HD99": {
+        "enabled": false,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "lower"
+      },
+
+      "ChamferSquared": {
+        "enabled": true,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "lower"
+      },
+
+      "SurfaceRMSE": {
+        "enabled": false,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "lower"
+      },
+
+      "RMSD": {
+        "enabled": true,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "lower"
+      },
+
+      "Dice": {
+        "enabled": false,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "higher"
+      },
+
+      "IoU": {
+        "enabled": false,
+        "mean": null,
+        "std": null,
+        "weight": null,
+        "direction": "higher"
+      }
+    },
+
+    "score_bins": [
+      {
+        "bin": 1,
+        "max": 1.0
+      },
+      {
+        "bin": 2,
+        "max": 2.0
+      },
+      {
+        "bin": 3,
+        "max": 3.0
+      }
+    ],
+
+    "above_maximum_bin": 4
+  },
+
+  "overrides": {
+  },
+
+  "_override_example": {
+    "L.pial": {
+      "general_quality": {
+        "metric_bins": {
+          "NormalConsistencyMeanDeg": [
+            {
+              "bin": 1,
+              "max": 5.0
+            },
+            {
+              "bin": 2,
+              "max": 10.0
+            },
+            {
+              "bin": 3,
+              "max": 20.0
+            }
+          ]
+        }
+      },
+
+      "composite_score": {
+        "metrics": {
+          "ASSD": {
+            "enabled": true,
+            "mean": 0.0,
+            "std": 1.0,
+            "weight": 0.25,
+            "direction": "lower"
+          }
+        }
+      }
+    }
+  }
+}
