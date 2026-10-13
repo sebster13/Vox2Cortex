@@ -75,7 +75,7 @@ GT_ROOT="/project/fetal/2025_FetalSurface_swolff/2024_FETAL_CONTROL_JT"
 
 PRED_ROOT="/project/fetal/2025_FetalSurface_swolff/2024_FETAL_CONTROL_JT"
 
-GT_MESH_TEMPLATE="{ROOT}/{SUB}/{SES}/surf/{SES}.{H}.{SURFACE}.native.surf.ply"
+GT_MESH_TEMPLATE="{ROOT}/{SUB}/{SES}/surf/{SES}.{H}.{SURFACE}.fsa6.reg.ply"
 
 PRED_MESH_TEMPLATE="{ROOT}/{SUB}/{SES}/surf/{SES}.{H}.{SURFACE}.fsa6.ply"
 
