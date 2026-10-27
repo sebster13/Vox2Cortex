@@ -18,58 +18,78 @@ set -euo pipefail
 # Container and repository configuration
 # =========================================================================
 
-CONTAINER_IMG="/home/cir/swolff/surface_reconstruction/vox2cortex.sif"
+# Container used for cortical-surface metric evaluation.
+EVALUATION_CONTAINER_IMG="/home/cir/swolff/surface_reconstruction/vox2cortex.sif"
+
+# Separate container used only for VTK-to-PLY conversion with PyVista.
+CONVERSION_CONTAINER_IMG="/home/cir/swolff/surface_reconstruction/surfaceprocessing.sif"
 
 REPO="/home/cir/swolff/surface_reconstruction/Vox2Cortex/vox2organ"
 
 QUALITY_CONFIG="${REPO}/quality_config.json"
 
 # Add the complete path to vtk2ply.py here.
-VTK2PLY_SCRIPT="/home/cir/swolff/surface_reconstruction/Vox2Cortex/vtk2ply.py"
+VTK2PLY_SCRIPT="/FULL/PATH/TO/vtk2ply.py"
 
 RUN_CTN="${RUN_CTN:-singularity}"
 
-# Evaluation Python environment
-PYTHON_BIN="python"
-CONDA_SH="/opt/conda/etc/profile.d/conda.sh"
-CONDA_ENV="torch_1_10"
 
-# Conversion Python environment.
+# =========================================================================
+# Evaluation Python environment in vox2cortex.sif
+# =========================================================================
+
+EVALUATION_PYTHON_BIN="python"
+
+EVALUATION_CONDA_SH="/opt/conda/etc/profile.d/conda.sh"
+
+EVALUATION_CONDA_ENV="torch_1_10"
+
+
+# =========================================================================
+# Conversion Python environment in surfaceprocessing.sif
+# =========================================================================
+
+# Set this to the Python executable in surfaceprocessing.sif.
 #
-# These may be the same as the evaluation environment if PyVista is installed
-# in torch_1_10. Otherwise, set CONVERTER_CONDA_ENV to the Conda environment
-# containing PyVista.
-CONVERTER_PYTHON_BIN="python"
-CONVERTER_CONDA_ENV="${CONDA_ENV}"
+# If Python is directly available in PATH, leave this as:
+#
+#   python
+#
+# Otherwise, use an absolute path such as:
+#
+#   /opt/conda/bin/python
+CONVERSION_PYTHON_BIN="python"
+
+# Most processing containers already expose their intended Python environment
+# without requiring "conda activate". The default is therefore false.
+#
+# Set to true only if surfaceprocessing.sif requires explicit Conda
+# activation.
+CONVERSION_USE_CONDA="false"
+
+# These are used only if CONVERSION_USE_CONDA="true".
+CONVERSION_CONDA_SH="/opt/conda/etc/profile.d/conda.sh"
+CONVERSION_CONDA_ENV="surfaceprocessing"
 
 
 # =========================================================================
 # Atlas input configuration
 # =========================================================================
 
-# Existing dataset root.
 GT_ROOT="/project/fetal/2025_FetalSurface_swolff/2024_FETAL_CONTROL_JT"
 
-# Atlas folders are below:
-#
-# ${GT_ROOT}/atlases/CRL_ATLAS2017_GW21
-# ...
-# ${GT_ROOT}/atlases/CRL_ATLAS2017_GW38
 ATLAS_ROOT="${GT_ROOT}/atlases"
 
-# One atlas folder per line, for example:
+# One atlas folder per line:
 #
 # CRL_ATLAS2017_GW21
 # CRL_ATLAS2017_GW22
 # ...
 # CRL_ATLAS2017_GW38
-ATLAS_PROCESSED="${ATLAS_ROOT}/atlases_folders.txt"
+ATLAS_PROCESSED="${ATLAS_ROOT}/processed_atlases.txt"
 
-# Name of the directory containing the surface meshes within each atlas.
 ATLAS_SURFACE_DIRECTORY="SURFACES"
 
-# Atlas filenames use:
-#
 # GW21 -> 104021
 # GW22 -> 104022
 # ...
@@ -81,18 +101,9 @@ ATLAS_FILE_ID_PREFIX="1040"
 # PLY conversion behavior
 # =========================================================================
 
-# Converted files are stored next to their source VTK files using the same
-# basename:
-#
-# INNERCORTEXLEFT_HR_104021.vtk
-# INNERCORTEXLEFT_HR_104021.ply
-#
 # Existing nonempty PLY files are reused.
 #
-# If false, the modification time of the VTK is ignored and an existing PLY
-# is always reused.
-#
-# If true, the PLY is regenerated when the VTK is newer than the PLY.
+# If true, an existing PLY is regenerated when its source VTK is newer.
 RECONVERT_IF_VTK_NEWER="false"
 
 
@@ -100,12 +111,12 @@ RECONVERT_IF_VTK_NEWER="false"
 # Output configuration
 # =========================================================================
 
-OUT_CSV="/home/cir/swolff/surface_reconstruction/atlas_CRL_gt_quality.csv"
+OUT_CSV="/home/cir/swolff/surface_reconstruction/atlas_gt_quality.csv"
 
-# Remove an existing output CSV before starting.
+# Remove an existing result CSV before starting.
 RESET_OUTPUT="false"
 
-# Continue with other surfaces if one conversion or evaluation fails.
+# Continue evaluating remaining surfaces after an individual failure.
 CONTINUE_ON_ERROR="true"
 
 
@@ -113,8 +124,15 @@ CONTINUE_ON_ERROR="true"
 # Validation
 # =========================================================================
 
-if [[ ! -f "${CONTAINER_IMG}" ]]; then
-  echo "ERROR: Container image not found: ${CONTAINER_IMG}" >&2
+if [[ ! -f "${EVALUATION_CONTAINER_IMG}" ]]; then
+  echo "ERROR: Evaluation container not found:" >&2
+  echo "       ${EVALUATION_CONTAINER_IMG}" >&2
+  exit 1
+fi
+
+if [[ ! -f "${CONVERSION_CONTAINER_IMG}" ]]; then
+  echo "ERROR: Conversion container not found:" >&2
+  echo "       ${CONVERSION_CONTAINER_IMG}" >&2
   exit 1
 fi
 
@@ -124,22 +142,26 @@ if [[ ! -d "${REPO}" ]]; then
 fi
 
 if [[ ! -f "${REPO}/evaluate_mesh_pair.py" ]]; then
-  echo "ERROR: Evaluator not found: ${REPO}/evaluate_mesh_pair.py" >&2
+  echo "ERROR: Evaluator not found:" >&2
+  echo "       ${REPO}/evaluate_mesh_pair.py" >&2
   exit 1
 fi
 
 if [[ ! -f "${REPO}/utils/eval_metrics.py" ]]; then
-  echo "ERROR: Metric file not found: ${REPO}/utils/eval_metrics.py" >&2
+  echo "ERROR: Metric file not found:" >&2
+  echo "       ${REPO}/utils/eval_metrics.py" >&2
   exit 1
 fi
 
 if [[ ! -f "${QUALITY_CONFIG}" ]]; then
-  echo "ERROR: Quality configuration not found: ${QUALITY_CONFIG}" >&2
+  echo "ERROR: Quality configuration not found:" >&2
+  echo "       ${QUALITY_CONFIG}" >&2
   exit 1
 fi
 
 if [[ ! -f "${VTK2PLY_SCRIPT}" ]]; then
-  echo "ERROR: VTK-to-PLY converter not found: ${VTK2PLY_SCRIPT}" >&2
+  echo "ERROR: VTK-to-PLY converter not found:" >&2
+  echo "       ${VTK2PLY_SCRIPT}" >&2
   exit 1
 fi
 
@@ -154,12 +176,18 @@ if [[ ! -d "${ATLAS_ROOT}" ]]; then
 fi
 
 if [[ ! -f "${ATLAS_PROCESSED}" ]]; then
-  echo "ERROR: Atlas list does not exist: ${ATLAS_PROCESSED}" >&2
+  echo "ERROR: Atlas list does not exist:" >&2
+  echo "       ${ATLAS_PROCESSED}" >&2
   exit 1
 fi
 
 if ! command -v "${RUN_CTN}" >/dev/null 2>&1; then
   echo "ERROR: Container runner not found: ${RUN_CTN}" >&2
+  exit 1
+fi
+
+if [[ "${CONVERSION_USE_CONDA}" != "true" && "${CONVERSION_USE_CONDA}" != "false" ]]; then
+  echo "ERROR: CONVERSION_USE_CONDA must be true or false." >&2
   exit 1
 fi
 
@@ -281,26 +309,24 @@ add_bind() {
 }
 
 
-# The atlas bind needs write access because converted PLY files are written
-# next to their VTK files. Singularity bind mounts are normally writable
-# unless the container or filesystem is explicitly configured otherwise.
+# GT_ROOT must be writable in the conversion container because PLY files are
+# stored next to the original VTK files.
 add_bind "${GT_ROOT}"
+
+# Required by the evaluation container.
 add_bind "${REPO}"
 add_bind "${OUT_DIR}"
 add_bind "$(dirname "${QUALITY_CONFIG}")"
+
+# Required by the conversion container.
 add_bind "$(dirname "${VTK2PLY_SCRIPT}")"
 
 
 # =========================================================================
-# Generic containerized Python runner
+# Evaluation-container runner
 # =========================================================================
 
-run_python_in_container() {
-  local conda_environment="$1"
-  shift
-
-  # All remaining arguments form the Python command and are quoted
-  # independently before being passed through bash -lc.
+run_evaluation_python() {
   local quoted_command
   local quoted_conda_sh
   local quoted_conda_environment
@@ -308,12 +334,22 @@ run_python_in_container() {
   local container_pythonpath
   local inner_command
 
+  # All function arguments constitute the command being run.
   printf -v quoted_command '%q ' "$@"
-  printf -v quoted_conda_sh '%q' "${CONDA_SH}"
-  printf -v quoted_conda_environment '%q' "${conda_environment}"
+
+  printf -v quoted_conda_sh \
+    '%q' \
+    "${EVALUATION_CONDA_SH}"
+
+  printf -v quoted_conda_environment \
+    '%q' \
+    "${EVALUATION_CONDA_ENV}"
 
   container_pythonpath="${REPO}:${PYTHONPATH:-}"
-  printf -v quoted_pythonpath '%q' "${container_pythonpath}"
+
+  printf -v quoted_pythonpath \
+    '%q' \
+    "${container_pythonpath}"
 
   inner_command="source ${quoted_conda_sh} && \
 conda activate ${quoted_conda_environment} && \
@@ -322,8 +358,74 @@ ${quoted_command}"
 
   "${RUN_CTN}" exec \
     "${BINDS[@]}" \
-    "${CONTAINER_IMG}" \
+    "${EVALUATION_CONTAINER_IMG}" \
     /bin/bash -lc "${inner_command}"
+}
+
+
+# =========================================================================
+# Conversion-container runner
+# =========================================================================
+
+run_conversion_python() {
+  local quoted_command
+  local inner_command
+
+  # All function arguments constitute the converter command.
+  printf -v quoted_command '%q ' "$@"
+
+  if [[ "${CONVERSION_USE_CONDA}" == "true" ]]; then
+    local quoted_conda_sh
+    local quoted_conda_environment
+
+    printf -v quoted_conda_sh \
+      '%q' \
+      "${CONVERSION_CONDA_SH}"
+
+    printf -v quoted_conda_environment \
+      '%q' \
+      "${CONVERSION_CONDA_ENV}"
+
+    inner_command="source ${quoted_conda_sh} && \
+conda activate ${quoted_conda_environment} && \
+${quoted_command}"
+  else
+    inner_command="${quoted_command}"
+  fi
+
+  "${RUN_CTN}" exec \
+    "${BINDS[@]}" \
+    "${CONVERSION_CONTAINER_IMG}" \
+    /bin/bash -lc "${inner_command}"
+}
+
+
+# =========================================================================
+# Conversion-environment validation
+# =========================================================================
+
+validate_conversion_environment() {
+  echo "Checking conversion environment in:"
+  echo "  ${CONVERSION_CONTAINER_IMG}"
+
+  if ! run_conversion_python \
+    "${CONVERSION_PYTHON_BIN}" \
+    -c \
+    "import sys; import pyvista as pv; print('Python:', sys.executable); print('PyVista:', pv.__version__)"; then
+
+    echo "ERROR: PyVista could not be imported in the conversion container." >&2
+    echo "       Container: ${CONVERSION_CONTAINER_IMG}" >&2
+    echo "       Python:    ${CONVERSION_PYTHON_BIN}" >&2
+    echo "       Conda:     ${CONVERSION_USE_CONDA}" >&2
+
+    if [[ "${CONVERSION_USE_CONDA}" == "true" ]]; then
+      echo "       Environment: ${CONVERSION_CONDA_ENV}" >&2
+    fi
+
+    exit 1
+  fi
+
+  echo
 }
 
 
@@ -335,39 +437,29 @@ ensure_atlas_ply_exists() {
   local vtk_path="$1"
   local ply_path="$2"
 
-  local conversion_required="false"
-
   if [[ ! -f "${vtk_path}" ]]; then
     echo "ERROR: Source VTK does not exist: ${vtk_path}" >&2
     return 1
   fi
 
-  # A nonempty PLY is reusable by default.
+  # Reuse an existing nonempty PLY unless explicit reconversion is needed.
   if [[ -s "${ply_path}" ]]; then
     if [[ "${RECONVERT_IF_VTK_NEWER}" == "true" && "${vtk_path}" -nt "${ply_path}" ]]; then
       echo "    Existing PLY is older than VTK; reconversion required."
-      conversion_required="true"
     else
       echo "    Reusing existing PLY: ${ply_path}"
       return 0
     fi
-  else
-    conversion_required="true"
-  fi
-
-  if [[ "${conversion_required}" != "true" ]]; then
-    return 0
   fi
 
   local conversion_lock="${ply_path}.conversion.lock"
 
-  # The conversion occurs under a lock so that two simultaneous jobs cannot
-  # create or replace the same PLY at the same time.
+  # Serializes conversion if multiple jobs encounter the same VTK.
   (
     flock -x 201
 
-    # Check again after obtaining the lock. Another process may have created
-    # the PLY while this process was waiting.
+    # Check again after obtaining the lock. Another process may have
+    # completed the conversion while this process was waiting.
     if [[ -s "${ply_path}" ]]; then
       if [[ "${RECONVERT_IF_VTK_NEWER}" == "true" && "${vtk_path}" -nt "${ply_path}" ]]; then
         echo "    Locked PLY is older than VTK; regenerating."
@@ -384,8 +476,7 @@ ensure_atlas_ply_exists() {
     ply_directory="$(dirname "${ply_path}")"
     ply_basename="$(basename "${ply_path}" .ply)"
 
-    # The temporary file retains the .ply suffix so that PyVista selects the
-    # correct writer from the filename.
+    # Keep the .ply suffix so that PyVista selects the correct output writer.
     temporary_ply="${ply_directory}/.${ply_basename}.conversion.${SLURM_JOB_ID:-noj}.$$.${RANDOM}.ply"
 
     rm -f "${temporary_ply}"
@@ -396,33 +487,33 @@ ensure_atlas_ply_exists() {
 
     trap cleanup_conversion_file EXIT
 
-    echo "    Converting VTK to PLY"
-    echo "      Input:  ${vtk_path}"
-    echo "      Output: ${ply_path}"
+    echo "    Converting VTK to PLY with surfaceprocessing.sif"
+    echo "      Input:     ${vtk_path}"
+    echo "      Temporary: ${temporary_ply}"
+    echo "      Final:     ${ply_path}"
 
-    # Calls the converter exactly as:
+    # This executes inside surfaceprocessing.sif:
     #
-    # python vtk2ply.py input.vtk output.ply
-    if ! run_python_in_container \
-      "${CONVERTER_CONDA_ENV}" \
-      "${CONVERTER_PYTHON_BIN}" \
+    # python vtk2ply.py input.vtk temporary_output.ply
+    if ! run_conversion_python \
+      "${CONVERSION_PYTHON_BIN}" \
       "${VTK2PLY_SCRIPT}" \
       "${vtk_path}" \
       "${temporary_ply}"; then
 
-      echo "ERROR: VTK-to-PLY conversion failed: ${vtk_path}" >&2
+      echo "ERROR: VTK-to-PLY conversion failed:" >&2
+      echo "       ${vtk_path}" >&2
       exit 1
     fi
 
     if [[ ! -s "${temporary_ply}" ]]; then
-      echo \
-        "ERROR: Converter completed but did not create a nonempty PLY: ${temporary_ply}" \
-        >&2
+      echo "ERROR: Converter did not create a nonempty PLY:" >&2
+      echo "       ${temporary_ply}" >&2
       exit 1
     fi
 
-    # Atomic replacement within the same filesystem. The evaluator never sees
-    # a partially written final PLY.
+    # The temporary and final files are in the same directory/filesystem, so
+    # mv provides atomic publication of the completed file.
     mv -f \
       "${temporary_ply}" \
       "${ply_path}"
@@ -430,9 +521,8 @@ ensure_atlas_ply_exists() {
     trap - EXIT
 
     if [[ ! -s "${ply_path}" ]]; then
-      echo \
-        "ERROR: Final converted PLY is missing or empty: ${ply_path}" \
-        >&2
+      echo "ERROR: Final converted PLY is missing or empty:" >&2
+      echo "       ${ply_path}" >&2
       exit 1
     fi
 
@@ -449,9 +539,8 @@ append_csv_safely() {
   local temporary_csv="$1"
 
   if [[ ! -s "${temporary_csv}" ]]; then
-    echo \
-      "ERROR: Temporary CSV is missing or empty: ${temporary_csv}" \
-      >&2
+    echo "ERROR: Temporary CSV is missing or empty:" >&2
+    echo "       ${temporary_csv}" >&2
     return 1
   fi
 
@@ -481,9 +570,7 @@ append_csv_safely() {
         echo "${existing_header}" >&2
         echo "Current evaluator header:" >&2
         echo "${new_header}" >&2
-        echo \
-          "Use a new OUT_CSV or set RESET_OUTPUT=true." \
-          >&2
+        echo "Use a new OUT_CSV or set RESET_OUTPUT=true." >&2
         exit 1
       fi
 
@@ -505,15 +592,24 @@ EVALUATION_FAILED_COUNT=0
 
 
 # =========================================================================
+# Validate PyVista before processing all atlases
+# =========================================================================
+
+validate_conversion_environment
+
+
+# =========================================================================
 # Atlas GT-only evaluation
 # =========================================================================
 
 echo "Starting atlas ground-truth quality evaluation"
-echo "Atlas root:       ${ATLAS_ROOT}"
-echo "Atlas list:       ${ATLAS_PROCESSED}"
-echo "VTK converter:    ${VTK2PLY_SCRIPT}"
-echo "Quality config:   ${QUALITY_CONFIG}"
-echo "Output CSV:       ${OUT_CSV_ABS}"
+echo "Atlas root:          ${ATLAS_ROOT}"
+echo "Atlas list:          ${ATLAS_PROCESSED}"
+echo "Conversion image:    ${CONVERSION_CONTAINER_IMG}"
+echo "Evaluation image:    ${EVALUATION_CONTAINER_IMG}"
+echo "VTK converter:       ${VTK2PLY_SCRIPT}"
+echo "Quality config:      ${QUALITY_CONFIG}"
+echo "Output CSV:          ${OUT_CSV_ABS}"
 echo
 
 
@@ -521,36 +617,29 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
   # Remove a possible Windows carriage return.
   raw_line="${raw_line%$'\r'}"
 
-  # Trim leading whitespace.
+  # Trim leading and trailing whitespace.
   line="${raw_line#"${raw_line%%[![:space:]]*}"}"
-
-  # Trim trailing whitespace.
   line="${line%"${line##*[![:space:]]}"}"
 
-  # Skip empty lines.
+  # Skip empty lines and full-line comments.
   [[ -z "${line}" ]] && continue
-
-  # Skip full-line comments.
   [[ "${line}" == \#* ]] && continue
 
-  # Remove an optional trailing comment.
+  # Remove an optional trailing comment, then trim again.
   line="${line%%#*}"
-
-  # Trim again after removing the comment.
   line="${line#"${line%%[![:space:]]*}"}"
   line="${line%"${line##*[![:space:]]}"}"
 
   [[ -z "${line}" ]] && continue
 
-  # Only the first whitespace-separated value is used.
   atlas_entry=""
   read -r atlas_entry _ <<< "${line}"
 
-  # Permit either a bare folder name or a full path.
+  # Accept either a bare directory name or a full path.
   atlas_entry="${atlas_entry%/}"
   ATLAS_FOLDER="$(basename "${atlas_entry}")"
 
-  # Extract GW21 to GW38.
+  # Extract gestational week 21 through 38.
   if [[ "${ATLAS_FOLDER}" =~ ^CRL_ATLAS2017_GW(2[1-9]|3[0-8])$ ]]; then
     GW="${BASH_REMATCH[1]}"
   else
@@ -564,23 +653,21 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
   SURFACES_DIRECTORY="${ATLAS_DIRECTORY}/${ATLAS_SURFACE_DIRECTORY}"
 
   if [[ ! -d "${ATLAS_DIRECTORY}" ]]; then
-    echo \
-      "WARN: Atlas directory not found: ${ATLAS_DIRECTORY}" \
-      >&2
+    echo "WARN: Atlas directory not found:" >&2
+    echo "      ${ATLAS_DIRECTORY}" >&2
     continue
   fi
 
   if [[ ! -d "${SURFACES_DIRECTORY}" ]]; then
-    echo \
-      "WARN: Atlas SURFACES directory not found: ${SURFACES_DIRECTORY}" \
-      >&2
+    echo "WARN: Atlas SURFACES directory not found:" >&2
+    echo "      ${SURFACES_DIRECTORY}" >&2
     continue
   fi
 
   ATLAS_COUNT=$((ATLAS_COUNT + 1))
 
   echo "Atlas: ${ATLAS_FOLDER}"
-  echo "  Gestational week: ${GW}"
+  echo "  Gestational week:  ${GW}"
   echo "  Surface directory: ${SURFACES_DIRECTORY}"
 
   for HEMISPHERE in L R; do
@@ -593,7 +680,7 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
           "${SURFACE}"
       )"
 
-      # The converted PLY is stored beside the VTK using the same basename.
+      # Converted PLY is saved beside the source VTK with the same basename.
       PLY_PATH="${VTK_PATH%.vtk}.ply"
 
       LABEL="${ATLAS_FOLDER}_${HEMISPHERE}_${SURFACE}"
@@ -613,9 +700,7 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
         "${VTK_PATH}" \
         "${PLY_PATH}"; then
 
-        echo \
-          "ERROR: Could not prepare PLY for ${LABEL}" \
-          >&2
+        echo "ERROR: Could not prepare PLY for ${LABEL}" >&2
 
         CONVERSION_FAILED_COUNT=$(
           (CONVERSION_FAILED_COUNT + 1)
@@ -633,13 +718,13 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
 
       TMP_CSV="${TMP_DIR}/${LABEL}.csv"
 
-      # Prevent a failed evaluator from leaving a stale temporary result.
+      # Prevent a previous failed result from being reused.
       rm -f "${TMP_CSV}"
 
       declare -a EVALUATOR_ARGS
 
       EVALUATOR_ARGS=(
-        "${PYTHON_BIN}"
+        "${EVALUATION_PYTHON_BIN}"
         "${REPO}/evaluate_mesh_pair.py"
         --mode "gt-only"
         --gt "${PLY_PATH}"
@@ -652,13 +737,10 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
         --out_csv "${TMP_CSV}"
       )
 
-      if ! run_python_in_container \
-        "${CONDA_ENV}" \
+      if ! run_evaluation_python \
         "${EVALUATOR_ARGS[@]}"; then
 
-        echo \
-          "ERROR: Evaluation failed for ${LABEL}" \
-          >&2
+        echo "ERROR: Evaluation failed for ${LABEL}" >&2
 
         EVALUATION_FAILED_COUNT=$(
           (EVALUATION_FAILED_COUNT + 1)
@@ -672,9 +754,7 @@ while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
       fi
 
       if ! append_csv_safely "${TMP_CSV}"; then
-        echo \
-          "ERROR: Could not append result for ${LABEL}" \
-          >&2
+        echo "ERROR: Could not append result for ${LABEL}" >&2
 
         EVALUATION_FAILED_COUNT=$(
           (EVALUATION_FAILED_COUNT + 1)
