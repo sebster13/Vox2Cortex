@@ -29,7 +29,7 @@ REPO="/home/cir/swolff/surface_reconstruction/Vox2Cortex/vox2organ"
 QUALITY_CONFIG="${REPO}/quality_config.json"
 
 # Add the complete path to vtk2ply.py here.
-VTK2PLY_SCRIPT="/FULL/PATH/TO/vtk2ply.py"
+VTK2PLY_SCRIPT="/home/cir/swolff/surface_reconstruction/Vox2Cortex/vtk2ply.py"
 
 RUN_CTN="${RUN_CTN:-singularity}"
 
