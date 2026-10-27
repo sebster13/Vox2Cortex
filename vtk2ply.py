@@ -1,25 +1,81 @@
 #!/usr/bin/env python3
+
 import sys
-import pyvista as pv
 from pathlib import Path
 
-if len(sys.argv) < 2 or len(sys.argv) > 3:
-    print("Usage: vtk2ply.py input.vtk [output.ply]")
-    sys.exit(1)
+import pyvista as pv
 
-inp = Path(sys.argv[1])
-out = Path(sys.argv[2]) if len(sys.argv) == 3 else inp.with_suffix(".ply")
 
-# Read
-mesh = pv.read(str(inp))
+def main():
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print("Usage: vtk2ply.py input.vtk [output.ply]")
+        sys.exit(1)
 
-# Ensure a surface polydata and triangles (PLY expects polygonal, best as triangles)
-mesh = mesh.extract_surface().triangulate()
+    input_path = Path(sys.argv[1])
 
-# Optional: make sure normals exist for better shading
-if "Normals" not in mesh.point_data:
-    mesh = mesh.compute_normals(auto_orient_normals=True, consistent_normals=True)
+    output_path = (
+        Path(sys.argv[2])
+        if len(sys.argv) == 3
+        else input_path.with_suffix(".ply")
+    )
 
-# Write (binary=True gives smaller files; set False for human-readable)
-mesh.save(str(out), binary=False)
-print(f"Wrote: {out}")
+    if not input_path.is_file():
+        raise FileNotFoundError(
+            f"Input VTK file does not exist: {input_path}"
+        )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    # Read the original VTK object.
+    mesh = pv.read(str(input_path))
+
+    # Convert volumetric or other VTK datasets to an explicit surface.
+    # For PolyData, extract_surface preserves the polygonal surface.
+    mesh = mesh.extract_surface()
+
+    # The evaluator requires triangular faces. Triangulation preserves the
+    # direction of the original polygon winding but splits non-triangular
+    # polygons into triangles.
+    mesh = mesh.triangulate()
+
+    if mesh.n_points == 0:
+        raise ValueError(
+            f"Converted mesh contains no points: {input_path}"
+        )
+
+    if mesh.n_cells == 0:
+        raise ValueError(
+            f"Converted mesh contains no cells: {input_path}"
+        )
+
+    # Do not use:
+    #
+    #     auto_orient_normals=True
+    #     consistent_normals=True
+    #
+    # Those options can repair or change face winding, which would invalidate
+    # the orientation-consistency quality metric. PLY files do not require
+    # precomputed normals for this evaluation.
+    mesh.save(
+        str(output_path),
+        binary=False,
+    )
+
+    if not output_path.is_file():
+        raise RuntimeError(
+            f"PLY output was not created: {output_path}"
+        )
+
+    if output_path.stat().st_size == 0:
+        raise RuntimeError(
+            f"PLY output is empty: {output_path}"
+        )
+
+    print(f"Wrote: {output_path}")
+
+
+if __name__ == "__main__":
+    main()
