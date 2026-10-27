@@ -10,9 +10,25 @@ Supported modes
    ground-truth surface and assign its configurable GT quality bin.
 
 2. pair
-   Calculate general metrics for both prediction and GT, prediction-versus-GT
+   Calculate general metrics for a prediction and, unless --skip_gt_qa is
+   supplied, for its ground truth. Then calculate prediction-versus-GT
    metrics, hard-failure screening, a configurable composite score, and a
    final reconstruction quality bin.
+
+Atlas comparison
+----------------
+When an age-matched atlas is used as an already validated reference, invoke:
+
+    --mode pair
+    --gt /path/to/atlas.ply
+    --pred /path/to/subject.registered.ply
+    --skip_gt_qa
+    --subject_gw 20
+    --atlas_gw 21
+    --atlas_folder CRL_ATLAS2017_GW21
+
+The atlas mesh is still loaded for distance and RMSD calculations. Only its
+general QA metrics are skipped.
 
 The output is one wide CSV row per hemisphere and surface.
 """
@@ -45,11 +61,13 @@ from utils.eval_metrics import (
 )
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 @dataclass
 class LoadedMesh:
+    """Topology-preserving mesh representation used by the evaluator."""
+
     path: str
     vertices: np.ndarray
     faces: np.ndarray
@@ -59,8 +77,12 @@ def load_mesh_unprocessed(mesh_path: str) -> LoadedMesh:
     """
     Load a triangular mesh without topology-changing Trimesh processing.
 
-    process=False is important because vertex merging, face removal, or
-    topology repair would alter metrics such as Euler characteristic.
+    process=False is essential because automatic vertex merging, face
+    deletion, or repair could alter Euler characteristic and other topology
+    metrics.
+
+    Atlas VTK surfaces should be converted to PLY before being passed to this
+    evaluator.
     """
     if not os.path.isfile(mesh_path):
         raise FileNotFoundError(
@@ -73,35 +95,27 @@ def load_mesh_unprocessed(mesh_path: str) -> LoadedMesh:
     )
 
     if isinstance(loaded, trimesh.Scene):
-        geometry = list(loaded.geometry.values())
+        geometry = [
+            geometry_item
+            for geometry_item in loaded.geometry.values()
+            if isinstance(geometry_item, trimesh.Trimesh)
+        ]
 
         if len(geometry) == 0:
             raise ValueError(
-                "No geometry found in scene: {}".format(mesh_path)
-            )
-
-        try:
-            loaded = loaded.dump(concatenate=True)
-        except Exception:
-            triangular_geometry = [
-                item
-                for item in geometry
-                if isinstance(item, trimesh.Trimesh)
-            ]
-
-            if len(triangular_geometry) == 0:
-                raise ValueError(
-                    "No triangular geometry found in scene: {}"
-                    .format(mesh_path)
+                "No triangular geometry found in scene: {}".format(
+                    mesh_path
                 )
-
-            loaded = trimesh.util.concatenate(
-                triangular_geometry
             )
+
+        loaded = trimesh.util.concatenate(geometry)
 
     if not isinstance(loaded, trimesh.Trimesh):
         raise ValueError(
-            "Unsupported mesh type for: {}".format(mesh_path)
+            "Unsupported mesh type for {}: {}".format(
+                mesh_path,
+                type(loaded).__name__,
+            )
         )
 
     vertices = np.asarray(
@@ -116,15 +130,42 @@ def load_mesh_unprocessed(mesh_path: str) -> LoadedMesh:
 
     if vertices.ndim != 2 or vertices.shape[1] != 3:
         raise ValueError(
-            "Vertices in {} do not have shape (V, 3)."
-            .format(mesh_path)
+            "Vertices in {} do not have shape (V, 3); got {}.".format(
+                mesh_path,
+                vertices.shape,
+            )
         )
 
     if faces.ndim != 2 or faces.shape[1] != 3:
         raise ValueError(
-            "Faces in {} do not have shape (F, 3). "
-            "The evaluator requires triangular meshes."
-            .format(mesh_path)
+            "Faces in {} do not have shape (F, 3); got {}. "
+            "Only triangular meshes are supported.".format(
+                mesh_path,
+                faces.shape,
+            )
+        )
+
+    if vertices.shape[0] == 0:
+        raise ValueError(
+            "Mesh contains no vertices: {}".format(mesh_path)
+        )
+
+    if faces.shape[0] == 0:
+        raise ValueError(
+            "Mesh contains no faces: {}".format(mesh_path)
+        )
+
+    if not np.isfinite(vertices).all():
+        raise ValueError(
+            "Mesh contains NaN or infinite vertices: {}".format(
+                mesh_path
+            )
+        )
+
+    if faces.min() < 0 or faces.max() >= vertices.shape[0]:
+        raise ValueError(
+            "Mesh contains face indices outside the valid vertex "
+            "range: {}".format(mesh_path)
         )
 
     return LoadedMesh(
@@ -138,9 +179,7 @@ def deep_merge(
     base: Dict[str, Any],
     override: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Recursively merge dictionaries.
-    """
+    """Recursively merge a configuration override into a base dictionary."""
     result = copy.deepcopy(base)
 
     for key, value in override.items():
@@ -160,14 +199,21 @@ def deep_merge(
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
+    """Read the JSON quality configuration."""
     if not os.path.isfile(config_path):
         raise FileNotFoundError(
-            "Quality configuration does not exist: {}"
-            .format(config_path)
+            "Quality configuration does not exist: {}".format(
+                config_path
+            )
         )
 
-    with open(config_path, "r") as file_handle:
+    with open(config_path, "r", encoding="utf-8") as file_handle:
         config = json.load(file_handle)
+
+    if not isinstance(config, dict):
+        raise ValueError(
+            "The quality configuration root must be a JSON object."
+        )
 
     return config
 
@@ -180,31 +226,19 @@ def resolve_config(
     """
     Apply optional per-hemisphere/per-surface configuration overrides.
 
-    Recognized override precedence is:
-
+    Override precedence:
         *.*
         *.surface
         hemisphere.*
         hemisphere.surface
-
-    Example:
-
-        "overrides": {
-            "L.pial": {
-                "composite_score": {
-                    "metrics": {
-                        "ASSD": {
-                            "mean": 0.4,
-                            "std": 0.1,
-                            "weight": 0.5
-                        }
-                    }
-                }
-            }
-        }
     """
     config = copy.deepcopy(raw_config)
     overrides = config.pop("overrides", {})
+
+    if not isinstance(overrides, dict):
+        raise ValueError(
+            "The configuration field 'overrides' must be an object."
+        )
 
     hemisphere = str(hemisphere)
     surface = str(surface)
@@ -220,6 +254,12 @@ def resolve_config(
 
     for candidate in candidates:
         if candidate in overrides:
+            if not isinstance(overrides[candidate], dict):
+                raise ValueError(
+                    "Configuration override {} must be an object."
+                    .format(candidate)
+                )
+
             config = deep_merge(
                 config,
                 overrides[candidate],
@@ -236,6 +276,7 @@ def resolve_config(
 
 
 def is_finite_number(value: Any) -> bool:
+    """Return True if a value can be represented as a finite float."""
     try:
         return bool(np.isfinite(float(value)))
     except (TypeError, ValueError):
@@ -246,6 +287,7 @@ def prefix_metrics(
     metrics: Dict[str, Any],
     prefix: str,
 ) -> Dict[str, Any]:
+    """Add a prefix to all metric names."""
     return {
         "{}{}".format(prefix, key): value
         for key, value in metrics.items()
@@ -259,10 +301,9 @@ def classify_lower_is_better_metric(
     fallback_bin: int,
 ) -> Tuple[Optional[int], str]:
     """
-    Classify a lower-is-better metric according to ordered JSON rules.
+    Classify one lower-is-better metric using ordered JSON bin rules.
 
     Example:
-
         [
             {"bin": 1, "max": 0.0},
             {"bin": 2, "max": 0.1},
@@ -270,43 +311,56 @@ def classify_lower_is_better_metric(
         ]
     """
     if not is_finite_number(value):
-        return None, "{} is missing or non-finite".format(
-            metric_name
+        return (
+            None,
+            "{} is missing or non-finite".format(metric_name),
         )
 
     if not isinstance(rules, list) or len(rules) == 0:
-        return None, "{} has no bin rules".format(
-            metric_name
+        return (
+            None,
+            "{} has no bin rules".format(metric_name),
         )
 
     previous_maximum = -np.inf
 
     for rule in rules:
         if not isinstance(rule, dict):
-            return None, "{} contains an invalid bin rule".format(
-                metric_name
+            return (
+                None,
+                "{} contains an invalid bin rule".format(
+                    metric_name
+                ),
             )
 
         bin_number = rule.get("bin")
         maximum = rule.get("max")
 
         if bin_number is None or maximum is None:
-            return None, (
-                "{} has an unconfigured bin threshold"
-            ).format(metric_name)
+            return (
+                None,
+                "{} has an unconfigured bin threshold".format(
+                    metric_name
+                ),
+            )
 
         try:
             bin_number = int(bin_number)
             maximum = float(maximum)
         except (TypeError, ValueError):
-            return None, (
-                "{} contains a non-numeric bin or threshold"
-            ).format(metric_name)
+            return (
+                None,
+                "{} contains a non-numeric bin or threshold".format(
+                    metric_name
+                ),
+            )
 
         if maximum < previous_maximum:
-            return None, (
+            return (
+                None,
                 "{} bin thresholds are not monotonically increasing"
-            ).format(metric_name)
+                .format(metric_name),
+            )
 
         previous_maximum = maximum
 
@@ -321,11 +375,11 @@ def classify_general_quality(
     general_config: Dict[str, Any],
 ) -> Tuple[Optional[int], str]:
     """
-    Assign the configurable single-surface general-quality bin.
+    Assign a general single-surface quality bin.
 
-    Euler mismatch is treated as the configured failure bin. For the other
-    general metrics, the worst individual metric bin determines the overall
-    bin.
+    Euler mismatch is assigned the configured mismatch bin. For all other
+    required metrics, the worst individual metric bin determines the overall
+    result.
     """
     fallback_bin = int(
         general_config.get("fallback_bin", 4)
@@ -336,11 +390,21 @@ def classify_general_quality(
         "unscorable",
     )
 
+    if missing_policy not in ("unscorable", "failure"):
+        return (
+            None,
+            "Unknown missing_metric_policy: {}".format(
+                missing_policy
+            ),
+        )
+
     euler_config = general_config.get("euler", {})
+
     euler_target = euler_config.get("target", 2)
     euler_tolerance = float(
         euler_config.get("tolerance", 0)
     )
+
     euler_mismatch_bin = int(
         euler_config.get(
             "mismatch_bin",
@@ -362,11 +426,12 @@ def classify_general_quality(
             "Euler characteristic is unavailable",
         )
 
-    if abs(float(euler_value) - float(euler_target)) > euler_tolerance:
+    if abs(
+        float(euler_value) - float(euler_target)
+    ) > euler_tolerance:
         return (
             euler_mismatch_bin,
-            "EulerCharacteristic={} does not match target {}"
-            .format(
+            "EulerCharacteristic={} does not match target {}".format(
                 euler_value,
                 euler_target,
             ),
@@ -393,9 +458,7 @@ def classify_general_quality(
         if metric_name not in metric_bin_rules:
             return (
                 None,
-                "No bin configuration for {}".format(
-                    metric_name
-                ),
+                "No bin configuration for {}".format(metric_name),
             )
 
         metric_bin, metric_reason = (
@@ -418,20 +481,21 @@ def classify_general_quality(
         individual_bins.append(metric_bin)
 
     if len(individual_bins) == 0:
-        return None, "No general-quality metrics were configured"
+        return (
+            None,
+            "No general-quality metrics were configured",
+        )
 
     overall_bin = max(individual_bins)
 
-    if len(reasons) > 0:
-        return overall_bin, "; ".join(reasons)
-
-    return overall_bin, ""
+    return overall_bin, "; ".join(reasons)
 
 
 def assign_score_bin(
     score: float,
     score_config: Dict[str, Any],
 ) -> Tuple[Optional[int], str]:
+    """Assign a final quality bin from a composite score."""
     rules = score_config.get("score_bins", [])
     above_maximum_bin = score_config.get(
         "above_maximum_bin",
@@ -447,21 +511,31 @@ def assign_score_bin(
     previous_maximum = -np.inf
 
     for rule in rules:
+        if not isinstance(rule, dict):
+            return None, "Invalid composite score bin rule"
+
         bin_number = rule.get("bin")
         maximum = rule.get("max")
 
         if bin_number is None or maximum is None:
-            return None, "Composite score bin contains null values"
+            return (
+                None,
+                "Composite score bin contains null values",
+            )
 
         try:
             bin_number = int(bin_number)
             maximum = float(maximum)
         except (TypeError, ValueError):
-            return None, "Composite score bins are non-numeric"
+            return (
+                None,
+                "Composite score bins are non-numeric",
+            )
 
         if maximum < previous_maximum:
-            return None, (
-                "Composite score bins are not monotonically increasing"
+            return (
+                None,
+                "Composite score bins are not monotonically increasing",
             )
 
         previous_maximum = maximum
@@ -473,6 +547,7 @@ def assign_score_bin(
 
 
 def safe_column_name(metric_name: str) -> str:
+    """Convert a configured metric name into a safe output-column suffix."""
     return re.sub(
         r"[^A-Za-z0-9_]+",
         "_",
@@ -487,35 +562,36 @@ def calculate_composite_score(
     """
     Calculate the weighted composite z-score.
 
-    Lower-is-better metric:
+    Lower-is-better:
+        z = (metric - reference_mean) / reference_std
 
-        z = (m - mean) / std
-
-    Higher-is-better metric:
-
-        z = (mean - m) / std
-
-    z_score_mode can be:
-
-    - signed:
-        Better-than-reference metrics can have negative z-scores.
-
-    - excess_only:
-        z is replaced by max(0, z), so better-than-reference metrics cannot
-        compensate for worse metrics.
+    Higher-is-better:
+        z = (reference_mean - metric) / reference_std
     """
     metric_configs = score_config.get("metrics", {})
+
+    if not isinstance(metric_configs, dict):
+        return (
+            None,
+            None,
+            "composite_score.metrics must be an object",
+        )
 
     enabled_metrics = [
         metric_name
         for metric_name, metric_config
         in metric_configs.items()
-        if bool(metric_config.get("enabled", False))
+        if (
+            isinstance(metric_config, dict)
+            and bool(metric_config.get("enabled", False))
+        )
     ]
 
     if len(enabled_metrics) == 0:
-        return None, None, (
-            "No composite-score metrics are enabled"
+        return (
+            None,
+            None,
+            "No composite-score metrics are enabled",
         )
 
     errors = []
@@ -542,17 +618,13 @@ def calculate_composite_score(
 
         if reference_mean is None:
             errors.append(
-                "{} reference mean is null".format(
-                    metric_name
-                )
+                "{} reference mean is null".format(metric_name)
             )
             continue
 
         if reference_std is None:
             errors.append(
-                "{} reference std is null".format(
-                    metric_name
-                )
+                "{} reference std is null".format(metric_name)
             )
             continue
 
@@ -590,8 +662,9 @@ def calculate_composite_score(
 
         if direction not in ("lower", "higher"):
             errors.append(
-                "{} direction must be lower or higher"
-                .format(metric_name)
+                "{} direction must be lower or higher".format(
+                    metric_name
+                )
             )
             continue
 
@@ -628,8 +701,9 @@ def calculate_composite_score(
             return (
                 None,
                 None,
-                "Enabled metric weights sum to {}, not 1"
-                .format(weight_sum),
+                "Enabled metric weights sum to {}, not 1".format(
+                    weight_sum
+                ),
             )
 
     z_score_mode = score_config.get(
@@ -641,9 +715,7 @@ def calculate_composite_score(
         return (
             None,
             None,
-            "Unknown z_score_mode: {}".format(
-                z_score_mode
-            ),
+            "Unknown z_score_mode: {}".format(z_score_mode),
         )
 
     composite_score = 0.0
@@ -669,16 +741,11 @@ def calculate_composite_score(
             z_score = max(0.0, z_score)
 
         contribution = weight * z_score
-
         safe_name = safe_column_name(metric_name)
 
-        row["Z_{}".format(safe_name)] = float(
-            z_score
-        )
+        row["Z_{}".format(safe_name)] = float(z_score)
         row[
-            "WeightedContribution_{}".format(
-                safe_name
-            )
+            "WeightedContribution_{}".format(safe_name)
         ] = float(contribution)
 
         composite_score += contribution
@@ -698,12 +765,9 @@ def load_volume_file(
     path: str,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """
-    Load a NIfTI, NPY, or NPZ volume.
+    Load an optional NIfTI, NPY, or NPZ volume.
 
-    Returns:
-        data, affine
-
-    affine is None for NPY/NPZ files.
+    The returned affine is None for NPY and NPZ files.
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(
@@ -712,7 +776,10 @@ def load_volume_file(
 
     lower_path = path.lower()
 
-    if lower_path.endswith(".nii") or lower_path.endswith(".nii.gz"):
+    if (
+        lower_path.endswith(".nii")
+        or lower_path.endswith(".nii.gz")
+    ):
         if nib is None:
             raise RuntimeError(
                 "nibabel is required to read NIfTI files."
@@ -724,9 +791,11 @@ def load_volume_file(
             image.affine,
             dtype=np.float64,
         )
+
     elif lower_path.endswith(".npy"):
         data = np.load(path)
         affine = None
+
     elif lower_path.endswith(".npz"):
         archive = np.load(path)
 
@@ -737,6 +806,7 @@ def load_volume_file(
 
         data = archive[archive.files[0]]
         affine = None
+
     else:
         raise ValueError(
             "Unsupported volume format for {}. "
@@ -751,10 +821,7 @@ def load_volume_file(
     if data.ndim != 3:
         raise ValueError(
             "Volume must be three-dimensional; got {} for {}."
-            .format(
-                data.shape,
-                path,
-            )
+            .format(data.shape, path)
         )
 
     return data, affine
@@ -764,6 +831,7 @@ def make_binary_mask(
     data: np.ndarray,
     label: Optional[float],
 ) -> np.ndarray:
+    """Convert an input segmentation to a binary mask."""
     if label is None:
         return np.isfinite(data) & (data != 0)
 
@@ -783,11 +851,10 @@ def calculate_overlap_from_files(
     affine_tolerance: float,
 ) -> Dict[str, Any]:
     """
-    Read optional segmentation files and calculate Dice and IoU.
+    Read prediction and GT segmentations and calculate Dice and IoU.
 
-    Surface-to-volume voxelization is intentionally not performed here.
-    If overlap metrics are required, both segmentations must already be
-    represented in the same grid.
+    This remains available for future use but is not invoked while overlap
+    mode is disabled in quality_config.json.
     """
     if require_reference_image and not reference_image_path:
         raise ValueError(
@@ -836,22 +903,28 @@ def calculate_overlap_from_files(
             )
 
         if reference_affine is not None:
-            if pred_affine is not None and not np.allclose(
-                pred_affine,
-                reference_affine,
-                atol=affine_tolerance,
-                rtol=0.0,
+            if (
+                pred_affine is not None
+                and not np.allclose(
+                    pred_affine,
+                    reference_affine,
+                    atol=affine_tolerance,
+                    rtol=0.0,
+                )
             ):
                 raise ValueError(
                     "Prediction segmentation affine does not match "
                     "the reference image."
                 )
 
-            if gt_affine is not None and not np.allclose(
-                gt_affine,
-                reference_affine,
-                atol=affine_tolerance,
-                rtol=0.0,
+            if (
+                gt_affine is not None
+                and not np.allclose(
+                    gt_affine,
+                    reference_affine,
+                    atol=affine_tolerance,
+                    rtol=0.0,
+                )
             ):
                 raise ValueError(
                     "GT segmentation affine does not match "
@@ -862,7 +935,6 @@ def calculate_overlap_from_files(
         pred_data,
         pred_label,
     )
-
     gt_mask = make_binary_mask(
         gt_data,
         gt_label,
@@ -878,6 +950,7 @@ def initialize_output_row(
     args: argparse.Namespace,
     profile_name: str,
 ) -> Dict[str, Any]:
+    """Create a stable wide-form result row."""
     row = {
         "SchemaVersion": SCHEMA_VERSION,
         "EvaluationMode": args.mode,
@@ -885,6 +958,18 @@ def initialize_output_row(
         "ConfigProfile": profile_name,
         "Subject": args.subject or "",
         "Session": args.session or "",
+        "SubjectGW": (
+            args.subject_gw
+            if args.subject_gw is not None
+            else np.nan
+        ),
+        "AtlasGW": (
+            args.atlas_gw
+            if args.atlas_gw is not None
+            else np.nan
+        ),
+        "AtlasFolder": args.atlas_folder or "",
+        "GTQASkipped": bool(args.skip_gt_qa),
         "Hemisphere": args.hemisphere or "",
         "Surface": args.surface or "",
         "Label": args.label or "",
@@ -961,6 +1046,7 @@ def initialize_output_row(
 def run_evaluation(
     args: argparse.Namespace,
 ) -> pd.DataFrame:
+    """Execute one GT-only or pairwise mesh evaluation."""
     raw_config = load_config(args.config)
 
     config, profile_name = resolve_config(
@@ -979,18 +1065,17 @@ def run_evaluation(
         {},
     )
 
-    # Create stable z-score/contribution columns even when scoring is not
-    # possible yet because reference parameters are null.
+    # Create stable configured score columns even when reference parameters
+    # are still null.
     for metric_name in score_config.get(
         "metrics",
         {},
     ):
         safe_name = safe_column_name(metric_name)
+
         row["Z_{}".format(safe_name)] = np.nan
         row[
-            "WeightedContribution_{}".format(
-                safe_name
-            )
+            "WeightedContribution_{}".format(safe_name)
         ] = np.nan
 
     general_config = config.get(
@@ -1007,24 +1092,6 @@ def run_evaluation(
 
     gt_mesh = load_mesh_unprocessed(args.gt)
 
-    gt_metrics = compute_general_mesh_metrics(
-        gt_mesh.vertices,
-        gt_mesh.faces,
-        calculate_self_intersections=calculate_self_intersections,
-    )
-
-    row.update(prefix_metrics(gt_metrics, "GT_"))
-
-    gt_bin, gt_bin_reason = classify_general_quality(
-        gt_metrics,
-        general_config,
-    )
-
-    row["GT_GeneralQualityBin"] = (
-        gt_bin if gt_bin is not None else np.nan
-    )
-    row["GT_GeneralQualityReason"] = gt_bin_reason
-
     gt_eligible_bins = [
         int(item)
         for item in general_config.get(
@@ -1033,27 +1100,77 @@ def run_evaluation(
         )
     ]
 
-    if gt_bin is None:
-        row["GTEligible"] = None
-    else:
-        row["GTEligible"] = (
-            int(gt_bin) in gt_eligible_bins
+    if args.skip_gt_qa:
+        if args.mode != "pair":
+            raise ValueError(
+                "--skip_gt_qa is intended for pair mode. "
+                "GT-only mode must evaluate the supplied GT."
+            )
+
+        # The atlas is treated as a trusted, already validated reference.
+        # General GT columns remain NaN because these measurements are not
+        # recomputed during this run.
+        gt_bin = (
+            gt_eligible_bins[0]
+            if len(gt_eligible_bins) > 0
+            else 1
         )
+
+        gt_bin_reason = (
+            "GT QA skipped: trusted prevalidated atlas reference"
+        )
+
+        row["GT_GeneralQualityBin"] = np.nan
+        row["GT_GeneralQualityReason"] = gt_bin_reason
+        row["GTEligible"] = True
+        row["GTQASkipped"] = True
+
+    else:
+        gt_metrics = compute_general_mesh_metrics(
+            gt_mesh.vertices,
+            gt_mesh.faces,
+            calculate_self_intersections=(
+                calculate_self_intersections
+            ),
+        )
+
+        row.update(
+            prefix_metrics(
+                gt_metrics,
+                "GT_",
+            )
+        )
+
+        gt_bin, gt_bin_reason = classify_general_quality(
+            gt_metrics,
+            general_config,
+        )
+
+        row["GT_GeneralQualityBin"] = (
+            gt_bin
+            if gt_bin is not None
+            else np.nan
+        )
+
+        row["GT_GeneralQualityReason"] = gt_bin_reason
+
+        if gt_bin is None:
+            row["GTEligible"] = None
+        else:
+            row["GTEligible"] = (
+                int(gt_bin) in gt_eligible_bins
+            )
 
     if args.mode == "gt-only":
         if gt_bin is None:
-            row["EvaluationStatus"] = (
-                "GT_ONLY_UNSCORABLE"
-            )
+            row["EvaluationStatus"] = "GT_ONLY_UNSCORABLE"
             row["FailureReasons"] = gt_bin_reason
+
         elif bool(row["GTEligible"]):
-            row["EvaluationStatus"] = (
-                "GT_ONLY_ELIGIBLE"
-            )
+            row["EvaluationStatus"] = "GT_ONLY_ELIGIBLE"
+
         else:
-            row["EvaluationStatus"] = (
-                "GT_ONLY_EXCLUDED"
-            )
+            row["EvaluationStatus"] = "GT_ONLY_EXCLUDED"
             row["FailureReasons"] = (
                 gt_bin_reason
                 or "GT quality bin is not eligible"
@@ -1068,13 +1185,21 @@ def run_evaluation(
 
     pred_mesh = load_mesh_unprocessed(args.pred)
 
+    # General quality is always calculated for the subject/prediction.
     pred_metrics = compute_general_mesh_metrics(
         pred_mesh.vertices,
         pred_mesh.faces,
-        calculate_self_intersections=calculate_self_intersections,
+        calculate_self_intersections=(
+            calculate_self_intersections
+        ),
     )
 
-    row.update(prefix_metrics(pred_metrics, "Pred_"))
+    row.update(
+        prefix_metrics(
+            pred_metrics,
+            "Pred_",
+        )
+    )
 
     pred_bin, pred_bin_reason = classify_general_quality(
         pred_metrics,
@@ -1082,8 +1207,11 @@ def run_evaluation(
     )
 
     row["Pred_GeneralQualityBin"] = (
-        pred_bin if pred_bin is not None else np.nan
+        pred_bin
+        if pred_bin is not None
+        else np.nan
     )
+
     row["Pred_GeneralQualityReason"] = pred_bin_reason
 
     hard_failure_bins = [
@@ -1190,6 +1318,7 @@ def run_evaluation(
 
             row.update(distance_metrics)
             row["DistanceMetricsValid"] = True
+
         except Exception as exc:
             row["DistanceMetricsValid"] = False
             row["DistanceMetricError"] = (
@@ -1221,7 +1350,11 @@ def run_evaluation(
                 "RMSD calculation disabled by configuration"
             )
 
-        overlap_config = config.get("overlap", {})
+        overlap_config = config.get(
+            "overlap",
+            {},
+        )
+
         overlap_mode = overlap_config.get(
             "mode",
             "disabled",
@@ -1232,9 +1365,7 @@ def run_evaluation(
 
         elif overlap_mode == "segmentation_files":
             if not args.pred_seg or not args.gt_seg:
-                row["OverlapStatus"] = (
-                    "MISSING_INPUTS"
-                )
+                row["OverlapStatus"] = "MISSING_INPUTS"
                 row["OverlapError"] = (
                     "segmentation_files mode requires both "
                     "--pred_seg and --gt_seg"
@@ -1267,6 +1398,7 @@ def run_evaluation(
 
                     row.update(overlap_metrics)
                     row["OverlapStatus"] = "VALID"
+
                 except Exception as exc:
                     row["OverlapStatus"] = "ERROR"
                     row["OverlapError"] = (
@@ -1280,8 +1412,7 @@ def run_evaluation(
             row["OverlapStatus"] = "NOT_IMPLEMENTED"
             row["OverlapError"] = (
                 "surface_voxelization is reserved for a future "
-                "implementation. Use segmentation_files mode with "
-                "prediction and GT masks in a shared grid."
+                "implementation."
             )
 
         else:
@@ -1299,7 +1430,10 @@ def run_evaluation(
             "SKIPPED_BY_SCREENING"
         )
 
-    # Final framework decision.
+    # ------------------------------------------------------------------
+    # Final framework decision
+    # ------------------------------------------------------------------
+
     if gt_bin is None:
         row["EvaluationStatus"] = "GT_QA_UNSCORABLE"
         row["FailureReasons"] = gt_bin_reason
@@ -1337,6 +1471,7 @@ def run_evaluation(
             pred_bin_reason
             or "Prediction failed general-quality screening"
         )
+
         return pd.DataFrame([row])
 
     composite_score, score_bin, score_error = (
@@ -1354,6 +1489,7 @@ def run_evaluation(
         row["FinalQualityBin"] = score_bin
         row["CompositeScoreStatus"] = "VALID"
         row["EvaluationStatus"] = "EVALUATED"
+
     else:
         row["CompositeScoreStatus"] = "UNAVAILABLE"
         row["CompositeScoreError"] = score_error
@@ -1366,10 +1502,11 @@ def run_evaluation(
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description=(
             "Evaluate a GT cortical surface alone or compare a "
-            "reconstructed surface with GT."
+            "subject/reconstructed surface with a GT or atlas."
         )
     )
 
@@ -1378,30 +1515,38 @@ def parse_args() -> argparse.Namespace:
         choices=["gt-only", "pair"],
         default="pair",
         help=(
-            "gt-only computes Part 1 metrics only. "
-            "pair computes Parts 1 and 2."
+            "gt-only computes general GT metrics. "
+            "pair computes prediction and comparison metrics."
         ),
     )
 
     parser.add_argument(
         "--gt_only",
         action="store_true",
-        help=(
-            "Compatibility alias for --mode gt-only."
-        ),
+        help="Compatibility alias for --mode gt-only.",
     )
 
     parser.add_argument(
         "--gt",
         required=True,
-        help="Path to the ground-truth mesh.",
+        help="Path to the ground-truth or atlas mesh.",
     )
 
     parser.add_argument(
         "--pred",
         default=None,
         help=(
-            "Path to the predicted mesh. Required in pair mode."
+            "Path to the subject/predicted mesh. "
+            "Required in pair mode."
+        ),
+    )
+
+    parser.add_argument(
+        "--skip_gt_qa",
+        action="store_true",
+        help=(
+            "Treat the supplied GT as an already validated trusted "
+            "reference. General GT metrics are not recomputed."
         ),
     )
 
@@ -1424,19 +1569,39 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--subject_gw",
+        type=float,
+        default=None,
+        help=(
+            "Original subject gestational age from the metadata CSV."
+        ),
+    )
+
+    parser.add_argument(
+        "--atlas_gw",
+        type=int,
+        default=None,
+        help=(
+            "Gestational week of the selected age-matched atlas."
+        ),
+    )
+
+    parser.add_argument(
+        "--atlas_folder",
+        default="",
+        help="Name of the selected atlas folder.",
+    )
+
+    parser.add_argument(
         "--hemisphere",
         default="",
-        help=(
-            "Hemisphere identifier, for example L or R."
-        ),
+        help="Hemisphere identifier, for example L or R.",
     )
 
     parser.add_argument(
         "--surface",
         default="",
-        help=(
-            "Surface identifier, for example pial or white."
-        ),
+        help="Surface identifier, for example pial or white.",
     )
 
     parser.add_argument(
@@ -1450,8 +1615,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Override the number of sampled points specified "
-            "in the JSON configuration."
+            "Override the number of sampled surface points "
+            "specified in the JSON configuration."
         ),
     )
 
@@ -1470,7 +1635,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Override the distance-calculation device specified "
-            "in the JSON."
+            "in the JSON configuration."
         ),
     )
 
@@ -1505,8 +1670,8 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help=(
-            "Predicted segmentation label. If omitted, all "
-            "nonzero voxels are treated as foreground."
+            "Predicted segmentation foreground label. "
+            "If omitted, all nonzero values are foreground."
         ),
     )
 
@@ -1515,8 +1680,8 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help=(
-            "GT segmentation label. If omitted, all nonzero "
-            "voxels are treated as foreground."
+            "GT segmentation foreground label. "
+            "If omitted, all nonzero values are foreground."
         ),
     )
 
@@ -1536,6 +1701,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Command-line entry point."""
     args = parse_args()
 
     if args.gt_only:
@@ -1544,6 +1710,11 @@ def main() -> None:
     if args.mode == "pair" and not args.pred:
         raise ValueError(
             "--pred must be supplied in pair mode."
+        )
+
+    if args.mode == "gt-only" and args.skip_gt_qa:
+        raise ValueError(
+            "--skip_gt_qa cannot be used with gt-only mode."
         )
 
     if args.label is None:
@@ -1570,7 +1741,10 @@ def main() -> None:
 
     pd.set_option("display.max_columns", None)
     pd.set_option("display.width", 240)
-    print(dataframe.to_string(index=False))
+
+    print(
+        dataframe.to_string(index=False)
+    )
 
     if args.out_csv:
         output_directory = os.path.dirname(
@@ -1597,14 +1771,18 @@ def main() -> None:
             exist_ok=True,
         )
 
-        # Pandas converts NaN to JSON null.
+        # Pandas converts NaN values to JSON null.
         records = json.loads(
             dataframe.to_json(
                 orient="records"
             )
         )
 
-        with open(args.out_json, "w") as file_handle:
+        with open(
+            args.out_json,
+            "w",
+            encoding="utf-8",
+        ) as file_handle:
             json.dump(
                 records,
                 file_handle,
