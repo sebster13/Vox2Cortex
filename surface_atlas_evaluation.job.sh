@@ -75,7 +75,7 @@ ROOT="/project/fetal/2025_FetalSurface_swolff/2024_FETAL_CONTROL_JT"
 #
 # sub-18 ses-20191107
 # sub-18/ses-20191107
-PROCESSED="${ROOT}/processed_reg.txt"
+PROCESSED="${ROOT}/processed.txt"
 
 # Metadata CSV containing at least:
 #
@@ -103,7 +103,7 @@ METADATA_CSV="${ROOT}/dataset_age.csv"
 #
 # /project/.../sub-18/ses-20191107/surf/
 # ses-20191107.R.pial.fsa6.reg.ply
-PRED_MESH_TEMPLATE="{ROOT}/{SUB}/{SES}/surf/{SES}.{H}.{SURFACE}.fsa6.reg.ply"
+PRED_MESH_TEMPLATE="{ROOT}/{SUB}/{SES}/surf/{SES}.{H}.{SURFACE}.native.surf.ply"
 
 
 # =========================================================================
