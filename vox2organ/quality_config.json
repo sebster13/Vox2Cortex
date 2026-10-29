@@ -115,62 +115,62 @@
     "metrics": {
       "ASSD": {
         "enabled": true,
-        "mean": null,
-        "std": null,
-        "weight": null,
+        "mean": 3.726,
+        "std": 3.634,
+        "weight": 0.3,
         "direction": "lower"
       },
 
       "HD": {
         "enabled": false,
-        "mean": null,
-        "std": null,
+        "mean": 11.734,
+        "std": 7.272,
         "weight": null,
         "direction": "lower"
       },
 
       "HD90": {
         "enabled": false,
-        "mean": null,
-        "std": null,
+        "mean": 7.846,
+        "std": 6.512,
         "weight": null,
         "direction": "lower"
       },
 
       "HD95": {
         "enabled": true,
-        "mean": null,
-        "std": null,
-        "weight": null,
+        "mean": 8.861,
+        "std": 6.890,
+        "weight": 0.3,
         "direction": "lower"
       },
 
       "HD99": {
         "enabled": false,
-        "mean": null,
-        "std": null,
+        "mean": 10.403,
+        "std": 7.292,
         "weight": null,
         "direction": "lower"
       },
 
       "ChamferSquared": {
         "enabled": true,
-        "mean": null,
-        "std": null,
-        "weight": null,
+        "mean": 73.252,
+        "std": 192.827,
+        "weight": 0.1,
         "direction": "lower"
       },
 
       "SurfaceRMSE": {
-        "enabled": false,
-        "mean": null,
-        "std": null,
-        "weight": null,
+        "enabled": true,
+        "mean": 4.477,
+        "std": 4.075,
+        "weight": 0.3,
         "direction": "lower"
       },
 
       "RMSD": {
-        "enabled": true,
+        "enabled": false,
         "mean": null,
         "std": null,
         "weight": null,
